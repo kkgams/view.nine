@@ -66,6 +66,17 @@ export function hitNineHandle(rect, point, tolerance) {
     return handles[0].distance <= tolerance ? handles[0] : null
 }
 
+// Stretch dividers span the complete outer box, not just the center rectangle.
+export function hitNineDivider(slice, point, tolerance) {
+    if (!nineContains(slice.bounds, point)) return null
+    const center = nineCenter(slice)
+    const nearest = candidates => candidates.sort((a, b) => a.distance - b.distance)[0]
+    const vertical = nearest([{ edge: 'w', distance: Math.abs(point.x - center.x) }, { edge: 'e', distance: Math.abs(point.x - center.x - center.width) }])
+    const horizontal = nearest([{ edge: 'n', distance: Math.abs(point.y - center.y) }, { edge: 's', distance: Math.abs(point.y - center.y - center.height) }])
+    const edge = (horizontal.distance <= tolerance ? horizontal.edge : '') + (vertical.distance <= tolerance ? vertical.edge : '')
+    return edge ? { edge, distance: Math.min(vertical.distance, horizontal.distance) } : null
+}
+
 export function resizeNineRect(rect, edge, point, limit) {
     let left = rect.x, top = rect.y, right = rect.x + rect.width, bottom = rect.y + rect.height
     if (edge.includes('w')) left = nineClamp(point.x, limit.x, right - 1)
@@ -90,6 +101,14 @@ export function resizeNineSlice(slice, target, edge, point, size) {
         result.center = { x, y, width: Math.max(1, b.width - x - right), height: Math.max(1, b.height - y - bottom) }
     }
     return result
+}
+
+export function dragNineDivider(slice, edge, start, point, size) {
+    const center = nineCenter(slice)
+    return resizeNineSlice(slice, 'center', edge, {
+        x: (edge.includes('w') ? center.x : center.x + center.width) + point.x - start.x,
+        y: (edge.includes('n') ? center.y : center.y + center.height) + point.y - start.y,
+    }, size)
 }
 
 export function moveNineSlice(slice, delta, size) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { validateNine, newNine, newSlice, nineRect, nineCenter, nineHandles, hitNineHandle, resizeNineSlice, moveNineSlice } from '../src/model.mjs'
+import { validateNine, newNine, newSlice, nineRect, nineCenter, nineHandles, hitNineHandle, hitNineDivider, dragNineDivider, resizeNineSlice, moveNineSlice } from '../src/model.mjs'
 
 const size = { width: 128, height: 96 }
 const slice = () => ({ name: 'Panel', bounds: { x: 10, y: 20, width: 30, height: 24 }, center: { x: 4, y: 5, width: 20, height: 12 } })
@@ -104,3 +104,60 @@ for (const target of ['bounds', 'center']) for (const edge of ['nw', 'n', 'ne', 
         assert.deepEqual(original, slice())
     })
 }
+
+for (const [edge, point] of [
+    ['w', { x: 14, y: 22 }], ['e', { x: 34, y: 42 }],
+    ['n', { x: 38, y: 25 }], ['s', { x: 12, y: 37 }],
+]) {
+    test(`blue ${edge} divider can be grabbed outside the center rectangle`, () => {
+        assert.equal(hitNineDivider(slice(), point, 1).edge, edge)
+    })
+}
+
+for (const [edge, point] of [
+    ['nw', { x: 14, y: 25 }], ['ne', { x: 34, y: 25 }],
+    ['sw', { x: 14, y: 37 }], ['se', { x: 34, y: 37 }],
+]) {
+    test(`blue divider intersection ${edge} selects both axes`, () => {
+        assert.equal(hitNineDivider(slice(), point, 1).edge, edge)
+    })
+}
+
+test('blue divider hit regions stay inside the slice and obey zoom-scaled tolerance', () => {
+    assert.equal(hitNineDivider(slice(), { x: 14, y: 19 }, 6), null)
+    assert.equal(hitNineDivider(slice(), { x: 41, y: 25 }, 6), null)
+    assert.equal(hitNineDivider(slice(), { x: 24, y: 31 }, 1), null)
+    assert.equal(hitNineDivider(slice(), { x: 15, y: 22 }, 1).edge, 'w')
+    assert.equal(hitNineDivider(slice(), { x: 15, y: 22 }, 0.5), null)
+})
+
+for (const [edge, point, expected] of [
+    ['w', { x: 17, y: 22 }, { x: 7, y: 5, width: 17, height: 12 }],
+    ['e', { x: 38, y: 42 }, { x: 4, y: 5, width: 24, height: 12 }],
+    ['n', { x: 38, y: 28 }, { x: 4, y: 8, width: 20, height: 9 }],
+    ['s', { x: 12, y: 40 }, { x: 4, y: 5, width: 20, height: 15 }],
+]) {
+    test(`dragging blue ${edge} divider changes only that border`, () => {
+        const original = slice()
+        const result = resizeNineSlice(original, 'center', edge, point, size)
+        assert.deepEqual(result.center, expected)
+        assert.deepEqual(result.bounds, original.bounds)
+        assert.deepEqual(original, slice())
+    })
+}
+
+test('nearby divider grab preserves its initial offset and ignores motion on the other axis', () => {
+    const original = slice(), start = { x: 15, y: 22 }
+    assert.deepEqual(dragNineDivider(original, 'w', start, start, size), original)
+    const result = dragNineDivider(original, 'w', start, { x: 18, y: 30 }, size)
+    assert.deepEqual(result.center, { x: 7, y: 5, width: 17, height: 12 })
+    assert.deepEqual(original, slice())
+})
+
+test('intersection drag moves both dividers and clamps them before crossing', () => {
+    const original = slice(), start = { x: 15, y: 24 }
+    const result = dragNineDivider(original, 'nw', start, { x: 1000, y: 1000 }, size)
+    assert.deepEqual(result.center, { x: 23, y: 16, width: 1, height: 1 })
+    assert.deepEqual(result.bounds, original.bounds)
+    validateNine({ ...newNine('a.png'), slices: [result] }, size)
+})

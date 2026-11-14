@@ -48,11 +48,20 @@ export class ViewNine extends ViewCanvasBase {
             const button = event.target.closest('button[data-action]')
             if (button) void this.perform(() => this.action(button.dataset.action))
         })
-        this.querySelector('[data-element="slices"]').addEventListener('click', event => {
-            const button = event.target.closest('button[data-index]')
-            if (!button || this.busy) return
-            this.selected = Number(button.dataset.index)
-            this.render()
+        const rows = this.querySelector('[data-element="slices"]')
+        rows.addEventListener('click', event => {
+            const row = event.target.closest('tr[data-index]')
+            if (row && !this.busy) this.selectSlice(Number(row.dataset.index), true)
+        })
+        rows.addEventListener('keydown', event => {
+            const row = event.target.closest('tr[data-index]')
+            if (!row || this.busy) return
+            const index = Number(row.dataset.index)
+            const destinations = { ArrowUp: index - 1, ArrowDown: index + 1, Home: 0, End: this.document.slices.length - 1, Enter: index, ' ': index }
+            if (!Object.hasOwn(destinations, event.key)) return
+            event.preventDefault()
+            event.stopPropagation()
+            this.selectSlice(nineClamp(destinations[event.key], 0, this.document.slices.length - 1), true)
         })
         this.querySelector('form').addEventListener('submit', event => event.preventDefault())
         this.querySelector('form').addEventListener('change', event => {
@@ -79,20 +88,30 @@ export class ViewNine extends ViewCanvasBase {
     createHeaderControlsElement() {
         const root = document.createElement('div')
         const groups = [
-            ['file-actions', [['new', 'New from atlas'], ['open', 'Open JSON'], ['save', 'Save'], ['save-as', 'Save as']]],
-            ['tool-actions', [['select', 'Select / move'], ['center', 'Stretch center'], ['draw', 'Draw slice']]],
-            ['edit-actions', [['undo', 'Undo'], ['redo', 'Redo']]],
-            ['view-actions', [['zoom-in', 'Zoom in'], ['zoom-out', 'Zoom out'], ['zoom-fit', 'Fit atlas']]],
+            ['file-actions', [['new', 'New from atlas', 'note_add'], ['open', 'Open JSON', 'folder_open'], ['save', 'Save', 'save'], ['save-as', 'Save as', 'save_as']]],
+            ['tool-actions', [['select', 'Select / move', 'select_all'], ['center', 'Stretch center', 'grid_on'], ['draw', 'Draw slice', 'crop_square']]],
+            ['edit-actions', [['undo', 'Undo', 'undo'], ['redo', 'Redo', 'redo']]],
+            ['view-actions', [['zoom-in', 'Zoom in', 'zoom_in'], ['zoom-out', 'Zoom out', 'zoom_out'], ['zoom-fit', 'Fit atlas', 'fit_screen']]],
         ]
         for (const [name, actions] of groups) {
             const group = document.createElement('div')
             group.setAttribute('role', 'buttongroup')
             group.dataset.element = name
-            for (const [action, label] of actions) {
+            for (const [action, label, symbol] of actions) {
                 const button = document.createElement('button')
                 button.type = 'button'
                 button.dataset.action = action
-                button.textContent = label
+                button.setAttribute('aria-label', label)
+                const icon = document.createElement('i')
+                icon.setAttribute('aria-hidden', 'true')
+                icon.textContent = symbol
+                button.append(icon)
+                if (action === 'save') button.classList.add('accent')
+                button.addEventListener('pointerenter', () => {
+                    const rect = button.getBoundingClientRect()
+                    void runtime.call('ui.tooltip.tip', { content: label,
+                        anchor: { kind: 'aabb', x: rect.x, y: rect.y, width: rect.width, height: rect.height } }).then(unwrap)
+                })
                 button.addEventListener('click', () => void this.perform(() => this.action(action)))
                 group.append(button)
             }
@@ -259,6 +278,13 @@ export class ViewNine extends ViewCanvasBase {
         this.commit(this.document, after)
     }
 
+    selectSlice(index, focus = false) {
+        this.finishGesture()
+        this.selected = index
+        this.render()
+        if (focus) this.querySelector(`tr[data-index="${index}"]`).focus()
+    }
+
     deleteSelected() {
         if (this.selected < 0) return
         const after = structuredClone(this.document)
@@ -282,17 +308,17 @@ export class ViewNine extends ViewCanvasBase {
         const focused = rows.contains(document.activeElement) ? document.activeElement.dataset.index : null
         rows.replaceChildren()
         if (this.document) this.document.slices.forEach((slice, index) => {
-            const row = document.createElement('tr'), cell = document.createElement('td'), button = document.createElement('button')
+            const row = document.createElement('tr'), cell = document.createElement('td')
+            row.dataset.index = index
             row.setAttribute('aria-selected', String(index === this.selected))
-            button.type = 'button'
-            button.dataset.index = index
-            button.textContent = slice.name
-            button.disabled = this.busy
-            cell.append(button); row.append(cell); rows.append(row)
+            row.setAttribute('aria-disabled', String(this.busy))
+            row.tabIndex = !this.busy && (index === this.selected || (this.selected < 0 && index === 0)) ? 0 : -1
+            cell.textContent = slice.name
+            row.append(cell); rows.append(row)
         })
         if (focused !== null) {
-            const button = rows.querySelector(`[data-index="${focused}"]`)
-            if (button && !button.disabled) button.focus()
+            const row = rows.querySelector(`tr[data-index="${focused}"]`)
+            if (row && !this.busy) row.focus()
         }
         const active = this.document && this.selected >= 0 ? this.document.slices[this.selected] : null
         this.querySelector('form > fieldset').disabled = !active || this.busy
@@ -310,7 +336,7 @@ export class ViewNine extends ViewCanvasBase {
         }
         this.querySelector('[data-action="discard"]').hidden = !this.dirty
         this.querySelector('[data-element="status"]').textContent = this.document
-            ? `${this.path || 'Unsaved JSON'}${this.dirty ? ' *' : ''} · ${this.document.image} · ${this.image.width} × ${this.image.height} · ${this.tool === 'draw' ? 'Drag to create slice' : this.tool === 'center' ? 'Drag cyan handles to set stretch center' : 'Drag boxes to move; yellow handles resize bounds'}`
+            ? `${this.path || 'Unsaved JSON'}${this.dirty ? ' *' : ''} · ${this.document.image} · ${this.image.width} × ${this.image.height} · ${this.tool === 'draw' ? 'Drag to create slice' : this.tool === 'center' ? 'Drag blue lines or cyan handles to set stretch center' : 'Drag boxes to move, yellow handles to resize, or blue lines to adjust stretch center'}`
             : 'Choose an atlas to begin.'
         this.draw()
     }
@@ -370,13 +396,17 @@ export class ViewNine extends ViewCanvasBase {
         } else {
             const slice = this.document.slices[this.selected]
             if (slice) {
-                for (const target of [this.tool === 'center' ? 'center' : 'bounds']) {
-                    const rect = target === 'center' ? nineCenter(slice) : slice.bounds
-                    const handle = hitNineHandle(rect, raw, 6 / this.scale)
-                    if (handle) {
-                        this.gesture = { kind: 'resize', target, edge: handle.edge, slice: structuredClone(slice), before, start: point }
-                        return
-                    }
+                const target = this.tool === 'center' ? 'center' : 'bounds'
+                const rect = target === 'center' ? nineCenter(slice) : slice.bounds
+                const handle = hitNineHandle(rect, raw, 6 / this.scale)
+                const divider = hitNineDivider(slice, raw, 6 / this.scale)
+                if (handle && (!divider || handle.distance <= divider.distance)) {
+                    this.gesture = { kind: 'resize', target, edge: handle.edge, slice: structuredClone(slice), before, start: point }
+                    return
+                }
+                if (divider) {
+                    this.gesture = { kind: 'divider', edge: divider.edge, slice: structuredClone(slice), before, start: point }
+                    return
                 }
             }
             this.selected = this.document.slices.findLastIndex(s => nineContains(s.bounds, raw))
@@ -391,6 +421,7 @@ export class ViewNine extends ViewCanvasBase {
         const point = this.pixelPoint(event), gesture = this.gesture
         if (gesture.kind === 'draw') gesture.point = point
         else if (gesture.kind === 'move') this.document.slices[this.selected] = moveNineSlice(gesture.slice, { x: point.x - gesture.start.x, y: point.y - gesture.start.y }, this.size)
+        else if (gesture.kind === 'divider') this.document.slices[this.selected] = dragNineDivider(gesture.slice, gesture.edge, gesture.start, point, this.size)
         else this.document.slices[this.selected] = resizeNineSlice(gesture.slice, gesture.target, gesture.edge, point, this.size)
         this.draw()
     }

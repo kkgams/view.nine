@@ -13,11 +13,13 @@ Each slice has an outer `bounds` rectangle in atlas pixels and an inner `center`
 
 1. Choose **New from atlas** and select a PNG, JPEG or WebP inside the Project. Paths are relative to the Project root, even when the JSON is saved in a subdirectory.
 2. Choose **Add slice** or **Draw slice**, then drag its outer rectangle over the atlas. New slices get an initial stretch center.
-3. Select a slice from the side-panel list or click its box. In **Select / move**, drag the box to move it or yellow outer handles to resize bounds. Choose **Stretch center** to drag cyan inner handles. Separate tools keep even coincident one-pixel handles selectable. All edits snap to integer pixels and stay inside the image. Overlapping slices are allowed; the list can select any slice.
+3. Select a slice from the side-panel list or click its box. In **Select / move**, drag the box to move it or yellow outer handles to resize bounds. Drag a blue divider anywhere along its length to adjust that stretch border in either selection tool; drag an intersection to adjust both axes. Choose **Stretch center** for cyan inner handles when bounds and center overlap. Divider drags preserve the pointer's initial offset so nearby grabs do not jump. All edits snap to integer pixels and stay inside the image. Overlapping slices are allowed; the list can select any slice.
 4. Edit the selected slice's name, bounds and relative center below the list. Names must be unique; both rectangles must have positive dimensions. Invalid edits are rejected with an error notification.
 5. Use **Save** or **Save as** to write JSON through the Project filesystem. **Open JSON** restores it and its atlas. Saves write a temporary sibling file and rename it into place after writing succeeds, preserving the existing destination on write failures. A failed save may leave a temporary file whose path appears in the error notification. Save or explicitly **Discard changes** before opening another document. Discard restores the last saved state and clears undo history.
 
-**Undo** and **Redo** include drawing, moving, resizing, deleting and property edits. Escape cancels a drag; leaving the canvas commits it. Wheel scrolling pans, Ctrl/Command+wheel zooms at the pointer, and Space+drag pans. Header controls provide zoom in/out and fit-to-atlas through the shared Host canvas base. Text fields retain normal typing behavior.
+The slice list uses selectable text rows, not buttons. Click a row or use Up/Down, Home/End, Enter or Space while the list is focused. Header actions use labelled icons with hover tips.
+
+**Undo** and **Redo** include drawing, moving, resizing, divider dragging, deleting and property edits. Escape cancels a drag; leaving the canvas commits it. Wheel scrolling pans, Ctrl/Command+wheel zooms at the pointer, and Space+drag pans. Header controls provide zoom in/out and fit-to-atlas through the shared Host canvas base. Text fields retain normal typing behavior.
 
 The format is independent of Aseprite's animation-oriented slice export; it does not import `.aseprite` files or define frame keys or pivots.
 
