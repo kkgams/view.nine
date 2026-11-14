@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { validateNine, newNine, newSlice, nineRect, nineCenter, nineHandles, hitNineHandle, hitNineDivider, dragNineDivider, resizeNineSlice, moveNineSlice } from '../src/model.mjs'
+import { validateNine, newNine, newSlice, nineRect, nineCenter, nineHandles, hitNineHandle, hitNineDivider, dragNineDivider, deleteNineSlice, resizeNineSlice, moveNineSlice } from '../src/model.mjs'
 
 const size = { width: 128, height: 96 }
 const slice = () => ({ name: 'Panel', bounds: { x: 10, y: 20, width: 30, height: 24 }, center: { x: 4, y: 5, width: 20, height: 12 } })
@@ -160,4 +160,23 @@ test('intersection drag moves both dividers and clamps them before crossing', ()
     assert.deepEqual(result.center, { x: 23, y: 16, width: 1, height: 1 })
     assert.deepEqual(result.bounds, original.bounds)
     validateNine({ ...newNine('a.png'), slices: [result] }, size)
+})
+
+for (const [deleted, selected, expected] of [[0, 1, 0], [2, 0, 0], [1, 1, 1], [2, 2, 1], [0, -1, -1]]) {
+    test(`delete slice ${deleted} with selection ${selected} preserves the expected selection`, () => {
+        const original = { ...doc(), slices: ['A', 'B', 'C'].map(name => ({ ...slice(), name })) }
+        const result = deleteNineSlice(original, deleted, selected)
+        assert.equal(result.selected, expected)
+        assert.deepEqual(result.document.slices.map(s => s.name), ['A', 'B', 'C'].filter((_, i) => i !== deleted))
+        if (selected >= 0 && selected !== deleted) assert.equal(result.document.slices[expected].name, original.slices[selected].name)
+        assert.deepEqual(original.slices.map(s => s.name), ['A', 'B', 'C'])
+        validateNine(result.document, size)
+    })
+}
+
+test('deleting the only slice clears selection and rejects nonexistent rows', () => {
+    const result = deleteNineSlice(doc(), 0, 0)
+    assert.deepEqual(result.document.slices, [])
+    assert.equal(result.selected, -1)
+    for (const index of [-1, 1, 0.5]) assert.throws(() => deleteNineSlice(doc(), index, 0), /must exist/)
 })

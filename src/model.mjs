@@ -111,6 +111,16 @@ export function dragNineDivider(slice, edge, start, point, size) {
     }, size)
 }
 
+export function deleteNineSlice(document, index, selected) {
+    nineAssert(Number.isInteger(index) && index >= 0 && index < document.slices.length, 'Slice to delete must exist')
+    const after = structuredClone(document)
+    after.slices.splice(index, 1)
+    return {
+        document: after,
+        selected: selected === index ? Math.min(index, after.slices.length - 1) : selected > index ? selected - 1 : selected,
+    }
+}
+
 export function moveNineSlice(slice, delta, size) {
     const result = structuredClone(slice)
     result.bounds.x = nineClamp(slice.bounds.x + delta.x, 0, size.width - slice.bounds.width)

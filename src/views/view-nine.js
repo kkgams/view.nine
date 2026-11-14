@@ -24,11 +24,7 @@ export class ViewNine extends ViewCanvasBase {
             <canvas data-element="canvas" aria-label="Atlas and nine-slice editor"></canvas>
             <aside>
                 <fieldset><legend>Slices</legend>
-                    <div role="buttongroup" data-element="slice-actions">
-                        <button type="button" data-action="add">Add slice</button>
-                        <button type="button" data-action="delete">Delete slice</button>
-                    </div>
-                    <table aria-label="Slices"><tbody data-element="slices"></tbody></table>
+                    <table class="compact-actions" aria-label="Slices"><tbody data-element="slices"></tbody></table>
                 </fieldset>
                 <form data-element="properties"><fieldset disabled><legend>Slice properties</legend>
                     <label>Name <input type="text" data-field="name" required ${NINE_TEXT}></label>
@@ -51,11 +47,26 @@ export class ViewNine extends ViewCanvasBase {
         const rows = this.querySelector('[data-element="slices"]')
         rows.addEventListener('click', event => {
             const row = event.target.closest('tr[data-index]')
-            if (row && !this.busy) this.selectSlice(Number(row.dataset.index), true)
+            if (!row) return
+            const button = event.target.closest('button[data-action="delete-slice"]')
+            if (button) {
+                event.stopPropagation()
+                if (!this.busy) {
+                    const index = Number(row.dataset.index), restoreFocus = row.contains(document.activeElement)
+                    void this.perform(() => this.deleteSlice(index)).then(() => {
+                        if (!restoreFocus) return
+                        const next = this.querySelector(`tr[data-index="${Math.min(index, this.document.slices.length - 1)}"] button`)
+                        if (next) next.focus()
+                        else this.focus()
+                    })
+                }
+                return
+            }
+            if (!this.busy) this.selectSlice(Number(row.dataset.index), true)
         })
         rows.addEventListener('keydown', event => {
             const row = event.target.closest('tr[data-index]')
-            if (!row || this.busy) return
+            if (!row || this.busy || event.target.closest('button')) return
             const index = Number(row.dataset.index)
             const destinations = { ArrowUp: index - 1, ArrowDown: index + 1, Home: 0, End: this.document.slices.length - 1, Enter: index, ' ': index }
             if (!Object.hasOwn(destinations, event.key)) return
@@ -141,8 +152,8 @@ export class ViewNine extends ViewCanvasBase {
         const actions = {
             new: () => this.new(), open: () => this.open(), save: () => this.save(), 'save-as': () => this.saveAs(),
             select: () => { this.tool = 'select' }, center: () => { this.tool = 'center' },
-            draw: () => { this.tool = 'draw' }, add: () => { this.tool = 'draw' },
-            delete: () => this.deleteSelected(), undo: () => this.undo(), redo: () => this.redo(),
+            draw: () => { this.tool = 'draw' },
+            undo: () => this.undo(), redo: () => this.redo(),
             'zoom-in': () => this.zoomIn(), 'zoom-out': () => this.zoomOut(), 'zoom-fit': () => this.zoomFit(),
             discard: () => this.discard(),
         }
@@ -286,10 +297,12 @@ export class ViewNine extends ViewCanvasBase {
     }
 
     deleteSelected() {
-        if (this.selected < 0) return
-        const after = structuredClone(this.document)
-        after.slices.splice(this.selected, 1)
-        this.commit(this.document, after, Math.min(this.selected, after.slices.length - 1))
+        if (this.selected >= 0) this.deleteSlice(this.selected)
+    }
+
+    deleteSlice(index) {
+        const after = deleteNineSlice(this.document, index, this.selected)
+        this.commit(this.document, after.document, after.selected)
     }
 
     undo() { this.finishGesture(); this.history.undo(); this.render() }
@@ -305,7 +318,7 @@ export class ViewNine extends ViewCanvasBase {
     render() {
         if (!this.canvas) return
         const rows = this.querySelector('[data-element="slices"]')
-        const focused = rows.contains(document.activeElement) ? document.activeElement.dataset.index : null
+        const focused = rows.contains(document.activeElement) ? document.activeElement.closest('tr[data-index]').dataset.index : null
         rows.replaceChildren()
         if (this.document) this.document.slices.forEach((slice, index) => {
             const row = document.createElement('tr'), cell = document.createElement('td')
@@ -314,7 +327,15 @@ export class ViewNine extends ViewCanvasBase {
             row.setAttribute('aria-disabled', String(this.busy))
             row.tabIndex = !this.busy && (index === this.selected || (this.selected < 0 && index === 0)) ? 0 : -1
             cell.textContent = slice.name
-            row.append(cell); rows.append(row)
+            const actions = document.createElement('td'), remove = document.createElement('button'), icon = document.createElement('i')
+            remove.type = 'button'
+            remove.dataset.action = 'delete-slice'
+            remove.setAttribute('aria-label', `Delete ${slice.name}`)
+            icon.setAttribute('aria-hidden', 'true')
+            icon.textContent = 'delete'
+            remove.append(icon)
+            actions.append(remove)
+            row.append(cell, actions); rows.append(row)
         })
         if (focused !== null) {
             const row = rows.querySelector(`tr[data-index="${focused}"]`)
@@ -330,7 +351,7 @@ export class ViewNine extends ViewCanvasBase {
             if (!root) continue
             for (const button of root.querySelectorAll('button[data-action]')) {
                 const action = button.dataset.action
-                button.disabled = this.busy || (!this.document && !['new', 'open'].includes(action)) || (action === 'delete' && !active) || (action === 'undo' && !this.history.canUndo()) || (action === 'redo' && !this.history.canRedo())
+                button.disabled = this.busy || (!this.document && !['new', 'open'].includes(action)) || (action === 'undo' && !this.history.canUndo()) || (action === 'redo' && !this.history.canRedo())
                 if (['select', 'center', 'draw'].includes(action)) button.setAttribute('aria-pressed', String(this.tool === action))
             }
         }
