@@ -4,8 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const config = JSON.parse(readFileSync(new URL('../gams.json', import.meta.url)))
 
-// This is the native $file contract, not a claim of compatibility with
-// the older released Host retained by the Makefile.
+// Remote Units use the native $file contract; local View sources stay canonical.
 test('local Project declares native $file resources and the canonical local View build', () => {
     const sources = [
         ...config.plugins,
