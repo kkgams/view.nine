@@ -2,6 +2,9 @@ import { runtime, unwrap } from '/core/runtime.js'
 import { ViewCanvasBase } from '/util/view-canvas-base.js'
 import { UndoHistory } from '/util/undo.js'
 
+const SLICE_TYPES = [['region', 'Region'], ['horizontal', 'Horizontal 3-slice'], ['vertical', 'Vertical 3-slice'], ['nine', '9-slice']]
+const typeOptions = () => SLICE_TYPES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')
+
 const NINE_TEXT = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"'
 
 export class ViewNine extends ViewCanvasBase {
@@ -13,6 +16,7 @@ export class ViewNine extends ViewCanvasBase {
         this.saved = ''
         this.selected = -1
         this.tool = 'select'
+        this.drawType = 'nine'
         this.gesture = null
         this.history = new UndoHistory()
         this.busy = false
@@ -21,17 +25,18 @@ export class ViewNine extends ViewCanvasBase {
 
     connectedCallback() {
         this.innerHTML = `
-            <canvas data-element="canvas" aria-label="Atlas and nine-slice editor"></canvas>
+            <canvas data-element="canvas" aria-label="Atlas slice editor"></canvas>
             <aside>
                 <fieldset><legend>Slices</legend>
                     <table class="compact-actions" aria-label="Slices"><tbody data-element="slices"></tbody></table>
                 </fieldset>
                 <form data-element="properties"><fieldset disabled><legend>Slice properties</legend>
+                    <label>Type <select data-field="type">${typeOptions()}</select></label>
                     <label>Name <input type="text" data-field="name" required ${NINE_TEXT}></label>
                     <fieldset><legend>Atlas bounds (pixels)</legend>
                         ${this.rectFields('bounds')}
                     </fieldset>
-                    <fieldset><legend>Stretch center (relative to bounds)</legend>
+                    <fieldset data-element="stretch-properties"><legend>Stretch center (relative to bounds)</legend>
                         ${this.rectFields('center')}
                     </fieldset>
                 </fieldset></form>
@@ -76,7 +81,7 @@ export class ViewNine extends ViewCanvasBase {
         })
         this.querySelector('form').addEventListener('submit', event => event.preventDefault())
         this.querySelector('form').addEventListener('change', event => {
-            if (!event.target.matches('input[data-field]')) return
+            if (!event.target.matches('input[data-field], select[data-field]')) return
             const input = { dataset: { field: event.target.dataset.field }, value: event.target.value, valueAsNumber: event.target.valueAsNumber }
             void this.perform(() => this.editProperty(input))
         })
@@ -125,6 +130,18 @@ export class ViewNine extends ViewCanvasBase {
                 })
                 button.addEventListener('click', () => void this.perform(() => this.action(action)))
                 group.append(button)
+            }
+            if (name === 'tool-actions') {
+                const type = document.createElement('select')
+                type.dataset.element = 'draw-type'
+                type.setAttribute('aria-label', 'New slice type')
+                type.innerHTML = typeOptions()
+                type.value = this.drawType
+                type.addEventListener('change', () => {
+                    const value = type.value
+                    void this.perform(() => { this.drawType = value })
+                })
+                group.append(type)
             }
             root.append(group)
         }
@@ -281,12 +298,19 @@ export class ViewNine extends ViewCanvasBase {
         nineAssert(this.selected >= 0, 'Select a slice first')
         const after = structuredClone(this.document), slice = after.slices[this.selected]
         const field = input.dataset.field
-        if (field === 'name') slice.name = input.value
+        if (field === 'type') after.slices[this.selected] = convertNineSlice(slice, input.value)
+        else if (field === 'name') slice.name = input.value
         else {
             const [rect, key] = field.split('.')
-            slice[rect][key] = input.valueAsNumber
+            if (rect === 'bounds' && (key === 'width' || key === 'height')) {
+                const point = { x: slice.bounds.x + (key === 'width' ? input.valueAsNumber : slice.bounds.width), y: slice.bounds.y + (key === 'height' ? input.valueAsNumber : slice.bounds.height) }
+                nineAssert(Number.isSafeInteger(input.valueAsNumber) && input.valueAsNumber > 0, 'Bounds must use positive integer dimensions')
+                nineAssert(point.x <= this.size.width && point.y <= this.size.height, 'Bounds exceed atlas')
+                after.slices[this.selected] = resizeNineSlice(slice, 'bounds', key === 'width' ? 'e' : 's', point, this.size)
+            } else slice[rect][key] = input.valueAsNumber
         }
         this.commit(this.document, after)
+        if (field === 'type') this.drawType = input.value
     }
 
     selectSlice(index, focus = false) {
@@ -343,21 +367,29 @@ export class ViewNine extends ViewCanvasBase {
         }
         const active = this.document && this.selected >= 0 ? this.document.slices[this.selected] : null
         this.querySelector('form > fieldset').disabled = !active || this.busy
-        for (const input of this.querySelectorAll('input[data-field]')) {
+        const axes = active ? sliceAxes(active.type) : { x: false, y: false }
+        if (this.tool === 'center' && !axes.x && !axes.y) this.tool = 'select'
+        this.querySelector('[data-element="stretch-properties"]').hidden = !axes.x && !axes.y
+        for (const input of this.querySelectorAll('input[data-field], select[data-field]')) {
             const [key, component] = input.dataset.field.split('.')
-            input.value = active ? (component ? active[key][component] : active[key]) : ''
+            const enabled = key !== 'center' || (component === 'x' || component === 'width' ? axes.x : axes.y)
+            input.closest('label').hidden = !enabled
+            input.disabled = !enabled
+            input.value = active && (key !== 'center' || active.type !== 'region') ? (component ? active[key][component] : active[key]) : ''
         }
         for (const root of [this, this._headerControlsElement]) {
             if (!root) continue
+            const drawType = root.querySelector('[data-element="draw-type"]')
+            if (drawType) { drawType.value = this.drawType; drawType.disabled = this.busy || !this.document }
             for (const button of root.querySelectorAll('button[data-action]')) {
                 const action = button.dataset.action
-                button.disabled = this.busy || (!this.document && !['new', 'open'].includes(action)) || (action === 'undo' && !this.history.canUndo()) || (action === 'redo' && !this.history.canRedo())
+                button.disabled = (action === 'center' && !axes.x && !axes.y) || this.busy || (!this.document && !['new', 'open'].includes(action)) || (action === 'undo' && !this.history.canUndo()) || (action === 'redo' && !this.history.canRedo())
                 if (['select', 'center', 'draw'].includes(action)) button.setAttribute('aria-pressed', String(this.tool === action))
             }
         }
         this.querySelector('[data-action="discard"]').hidden = !this.dirty
         this.querySelector('[data-element="status"]').textContent = this.document
-            ? `${this.path || 'Unsaved JSON'}${this.dirty ? ' *' : ''} · ${this.document.image} · ${this.image.width} × ${this.image.height} · ${this.tool === 'draw' ? 'Drag to create slice' : this.tool === 'center' ? 'Drag blue lines or cyan handles to set stretch center' : 'Drag boxes to move, yellow handles to resize, or blue lines to adjust stretch center'}`
+            ? `${this.path || 'Unsaved JSON'}${this.dirty ? ' *' : ''} · ${this.document.image} · ${this.image.width} × ${this.image.height} · ${this.tool === 'draw' ? `Drag to create ${SLICE_TYPES.find(([type]) => type === this.drawType)[1]}` : this.tool === 'center' ? 'Drag blue lines or cyan handles to set stretch center' : 'Drag boxes to move, yellow handles to resize, or blue lines to adjust stretch center'}`
             : 'Choose an atlas to begin.'
         this.draw()
     }
@@ -373,7 +405,8 @@ export class ViewNine extends ViewCanvasBase {
         ctx.fillRect(0, 0, this.image.width, this.image.height)
         ctx.drawImage(this.image, 0, 0)
         this.document.slices.forEach((slice, index) => {
-            const active = index === this.selected, b = slice.bounds, c = nineCenter(slice)
+            const active = index === this.selected, b = slice.bounds, axes = sliceAxes(slice.type)
+            const c = slice.type === 'region' ? null : nineCenter(slice)
             ctx.lineWidth = 1 / this.scale
             ctx.strokeStyle = active ? '#ffcc66' : '#ffffff'
             ctx.strokeRect(b.x, b.y, b.width, b.height)
@@ -381,11 +414,13 @@ export class ViewNine extends ViewCanvasBase {
             ctx.fillRect(b.x, b.y, b.width, b.height)
             ctx.strokeStyle = '#33ddff'
             ctx.beginPath()
-            for (const x of [c.x, c.x + c.width]) { ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.height) }
-            for (const y of [c.y, c.y + c.height]) { ctx.moveTo(b.x, y); ctx.lineTo(b.x + b.width, y) }
+            if (axes.x) for (const x of [c.x, c.x + c.width]) { ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.height) }
+            if (axes.y) for (const y of [c.y, c.y + c.height]) { ctx.moveTo(b.x, y); ctx.lineTo(b.x + b.width, y) }
             ctx.stroke()
-            if (active) for (const [rect, color] of [this.tool === 'center' ? [c, '#33ddff'] : [b, '#ffcc66']]) {
-                for (const handle of nineHandles(rect)) {
+            if (active) {
+                const color = this.tool === 'center' ? '#33ddff' : '#ffcc66'
+                const handles = this.tool === 'center' ? nineStretchHandles(slice) : nineHandles(b)
+                for (const handle of handles) {
                     const r = 3 / this.scale
                     ctx.fillStyle = color
                     ctx.fillRect(handle.x - r, handle.y - r, r * 2, r * 2)
@@ -417,9 +452,9 @@ export class ViewNine extends ViewCanvasBase {
         } else {
             const slice = this.document.slices[this.selected]
             if (slice) {
-                const target = this.tool === 'center' ? 'center' : 'bounds'
+                const target = this.tool === 'center' && slice.type !== 'region' ? 'center' : 'bounds'
                 const rect = target === 'center' ? nineCenter(slice) : slice.bounds
-                const handle = hitNineHandle(rect, raw, 6 / this.scale)
+                const handle = target === 'center' ? hitNineStretchHandle(slice, raw, 6 / this.scale) : hitNineHandle(rect, raw, 6 / this.scale)
                 const divider = hitNineDivider(slice, raw, 6 / this.scale)
                 if (handle && (!divider || handle.distance <= divider.distance)) {
                     this.gesture = { kind: 'resize', target, edge: handle.edge, slice: structuredClone(slice), before, start: point }
@@ -463,7 +498,7 @@ export class ViewNine extends ViewCanvasBase {
         if (gesture.kind === 'draw') {
             const bounds = nineRect(gesture.start, gesture.point)
             if (bounds.width && bounds.height) {
-                after.slices.push(newSlice(after.slices, bounds))
+                after.slices.push(newSlice(after.slices, bounds, this.drawType))
                 selected = after.slices.length - 1
                 this.tool = 'select'
             }

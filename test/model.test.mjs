@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { validateNine, newNine, newSlice, nineRect, nineCenter, nineHandles, hitNineHandle, hitNineDivider, dragNineDivider, deleteNineSlice, resizeNineSlice, moveNineSlice } from '../src/model.mjs'
 
 const size = { width: 128, height: 96 }
-const slice = () => ({ name: 'Panel', bounds: { x: 10, y: 20, width: 30, height: 24 }, center: { x: 4, y: 5, width: 20, height: 12 } })
+const slice = () => ({ name: 'Panel', type: 'nine', bounds: { x: 10, y: 20, width: 30, height: 24 }, center: { x: 4, y: 5, width: 20, height: 12 } })
 const doc = () => ({ ...newNine('images/atlas.png'), slices: [slice()] })
 
 test('versioned JSON roundtrip and deep copy preserve pixel rectangles', () => {

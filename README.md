@@ -1,6 +1,6 @@
 # Nine-slice editor
 
-A [GAMS](https://github.com/kkgams/gams) View for defining named nine-slice regions in a texture atlas. Open an atlas through the Project file chooser; no sample artwork is bundled.
+A [GAMS](https://github.com/kkgams/gams) View for defining named regions, horizontal/vertical three-slices and nine-slices in a texture atlas. Open an atlas through the Project file chooser; no sample artwork is bundled.
 
 | View | Source / release file | License / author |
 | --- | --- | --- |
