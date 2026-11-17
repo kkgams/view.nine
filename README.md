@@ -20,11 +20,11 @@ Requires Make, Node.js 24, Python 3, curl, zip, unzip and tar. No package instal
 | `make serve-docs` | Preview pinned wiki; independent `DOCS_PORT=8089` |
 | `make validate-docs` | Validate wiki |
 | `make docs` | Build `build.nosync/docs/` |
-| `make clean` | Remove generated output and marked Host download; preserve unmarked v3.1.1 Unit caches; refuse tracked output, symlinks and unidentified Host tools |
+| `make clean` | Remove all of `build.nosync/`, `tools/` and `gams_modules/`, without ownership markers; refuse tracked files or symlinks in deletion paths before deleting anything. |
 
 Edit `src/model.mjs` and `src/views/view-nine.js`. Make strips model exports and combines the modules for the Host's blob loader; absolute `/util` and `/widgets` imports remain Host-owned. First launch downloads the pinned Host and configured released Units. Existing Host downloads are retained without implicit updates, with notices beside the app. Launch selects this repository with `GAMS_APP_CWD` and `GAMS_CONFIG`.
 
-The local `gams.json` uses native `$file` resources with the pinned GAMS v3.2.0 Host. ZIP sources select their entry explicitly. Existing downloaded Hosts are not replaced automatically; unmarked legacy Unit caches under `gams_modules/` are retained by clean.
+The local `gams.json` uses native `$file` resources with the pinned GAMS v3.2.0 Host. ZIP sources select their entry explicitly. Existing downloaded Hosts are not replaced automatically.
 
 The ZIP contains `views/view-nine.js`, `LICENSE` and `NOTICE`, not Project configuration or downloaded dependencies. Follow the [Host View guide](https://github.com/kkgams/gams/blob/release/docs/gams-view-development-guide.md) for UI contracts.
 
