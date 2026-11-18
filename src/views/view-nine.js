@@ -17,6 +17,7 @@ export class ViewNine extends ViewCanvasBase {
         super()
         this.document = null
         this.image = null
+        this.transparencyPattern = null
         this.path = ""
         this.saved = ""
         this.selected = -1
@@ -528,11 +529,31 @@ export class ViewNine extends ViewCanvasBase {
         return { minX: 0, minY: 0, maxX: this.image ? this.image.width : 0, maxY: this.image ? this.image.height : 0 }
     }
 
+    drawTransparencyBackground(ctx) {
+        if (!this.transparencyPattern) {
+            const tile = this.ownerDocument.createElement("canvas")
+            tile.width = tile.height = 16
+            const tileCtx = tile.getContext("2d")
+            tileCtx.fillStyle = "#404040"
+            tileCtx.fillRect(0, 0, 16, 16)
+            tileCtx.fillStyle = "#606060"
+            tileCtx.fillRect(8, 0, 8, 8)
+            tileCtx.fillRect(0, 8, 8, 8)
+            this.transparencyPattern = ctx.createPattern(tile, "repeat")
+        }
+        // Keep the checks the same size on screen as the atlas zoom changes.
+        const inverseScale = 1 / this.scale
+        ctx.save()
+        ctx.scale(inverseScale, inverseScale)
+        ctx.fillStyle = this.transparencyPattern
+        ctx.fillRect(0, 0, this.image.width * this.scale, this.image.height * this.scale)
+        ctx.restore()
+    }
+
     drawContent(ctx) {
         if (!this.image) return
         ctx.imageSmoothingEnabled = false
-        ctx.fillStyle = "#404040"
-        ctx.fillRect(0, 0, this.image.width, this.image.height)
+        this.drawTransparencyBackground(ctx)
         ctx.drawImage(this.image, 0, 0)
         this.document.slices.forEach((slice, index) => {
             const active = index === this.selected,
